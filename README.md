@@ -1,16 +1,17 @@
 # 4x4x4 Qubic First-Player Winning Strategy Certificate
 
-This repository contains a standalone, machine-verifiable proof certificate (`opening_combined.tsv`) showing that the first player (`X`) has a forced win in $4 \times 4 \times 4$ Qubic (3D Tic-Tac-Toe) from any of the 3 symmetry-distinct opening moves:
+This repository contains a standalone, machine-verifiable proof certificate (`opening_combined.tsv`) showing that the first player (`X`) has a forced win in Qubic ($4 \times 4 \times 4$ Tic-Tac-Toe in three dimensions) from every possible opening cell.
 
-- **Corner** (`0` = `(0,0,0)`)
-- **Edge** (`1` = `(1,0,0)`)
-- **Interior** (`F` = `(1,1,1)`)
+Under the full **192 combinatorial symmetries** of the $4 \times 4 \times 4$ Qubic board ($48$ geometric symmetries $\times 4$ inside-outside coordinate inversions), the 8 outer corners and 8 inner centers merge into one orbit (`0`), and the 24 edge cells and 24 face-center cells merge into a second orbit (`1`), leaving **2 symmetry-distinct opening moves**:
 
-Because every cell of the $4 \times 4 \times 4$ cube is equivalent to one of these 3 cells under the 192 symmetries of the cube ($48$ geometric cube symmetries $\times 4$ Patashnik/Lustenberger reflection-permutation symmetries), `opening_combined.tsv` proves a forced first-player win from **every possible opening cell** (all 64 cells) in a single **`48,295`-row** table (`1.82 MB`).
+- **Opening `0` (`(0,0,0)`)**: 16 main-diagonal cells (corners and inner centers, 7 winning lines each)
+- **Opening `1` (`(1,0,0)`)**: 48 off-diagonal cells (edge and face-center cells, 4 winning lines each)
+
+`opening_combined.tsv` proves a forced first-player win from **both symmetry-distinct opening moves** (`0` and `1` — and therefore all 64 opening cells) in a single **`48,295`-row** table (`1.82 MB`).
 
 ## Files
 
-- **`opening_combined.tsv`** (`48,295` rows, `1,816,414` bytes): Unified winning strategy dictionary covering all 3 canonical opening classes (`0`, `1`, and `F`).
+- **`opening_combined.tsv`** (`48,295` rows, `1,816,414` bytes): Unified winning strategy dictionary covering both canonical opening moves (`0` and `1`).
 - **`qubic_verifier.py`**: Standalone zero-dependency Python 3 script that parses `opening_combined.tsv` and exhaustively verifies that `X` forces a win against every legal reply by `O`.
 
 ## Quick Verification
@@ -25,17 +26,16 @@ Expected output:
 
 ```text
 [PASS] opening_combined.tsv
-  opening_move=0,1,F
-  certificate_rows=48295 verified_prover_states=48294
+  opening_move=0,1
+  certificate_rows=48295 verified_prover_states=48295
   disprover_branches=2443236
 ```
 
-To verify a single opening move (`0,0,0`, `1,0,0`, or `1,1,1`):
+To verify a specific opening cell (any of the 64 cells, e.g. `0,0,0`, `1,1,1`, `1,0,0`, or `1,1,0`):
 
 ```bash
 python3 qubic_verifier.py --opening 0,0,0 opening_combined.tsv
 python3 qubic_verifier.py --opening 1,0,0 opening_combined.tsv
-python3 qubic_verifier.py --opening 1,1,1 opening_combined.tsv
 ```
 
 ## Certificate Format
