@@ -14,7 +14,7 @@ Under the full **192 combinatorial symmetries** of the $4 \times 4 \times 4$ Qub
 - **`opening_combined.tsv`** (`48,295` rows, `1,816,414` bytes): Unified winning strategy dictionary covering both canonical opening moves (`0` and `1`).
 - **`qubic_verifier.py`**: Standalone zero-dependency Python 3 script that parses `opening_combined.tsv` and exhaustively verifies that `X` forces a win against every legal reply by `O`.
 
-## Quick Verification
+## Verification
 
 Requires only Python 3 (standard library only, no external packages):
 
@@ -22,13 +22,14 @@ Requires only Python 3 (standard library only, no external packages):
 python3 qubic_verifier.py opening_combined.tsv
 ```
 
-Expected output:
+Verification takes ~15–20 minutes in standard CPython (or ~1 minute with `pypy3`), printing progress updates to `stderr` every 10 seconds before outputting the final summary to `stdout` (timings vary by machine):
 
 ```text
 [PASS] opening_combined.tsv
   opening_move=0,1
   certificate_rows=48295 verified_prover_states=48295
-  disprover_branches=2443236
+  disprover_branches=2454601
+  time: load=2103.3ms, verify=1087626.3ms
 ```
 
 To verify a specific opening cell (any of the 64 cells, e.g. `0,0,0`, `1,1,1`, `1,0,0`, or `1,1,0`):
@@ -67,8 +68,9 @@ z=0:  0 1 2 3    z=1:  E F G H    z=2:  U V W X    z=3:  k l m n
 
 ### Columns
 
-1. **`<board_state>`**: Occupied cells listed by interleaving `X`'s moves and `O`'s moves in ascending character order (`X0 O0 X1 O1 ...`), canonicalized under the 192 symmetries of the $4 \times 4 \times 4$ cube. Because all rows represent positions on `X`'s turn after an equal number of `X` and `O` moves, `<board_state>` always has even length $2k$, where the even indices ($0, 2, \dots$) are `X`'s stones and the odd indices ($1, 3, \dots$) are `O`'s stones.
-2. **`<move>`**: Single character indicating `X`'s chosen strategic move from `<board_state>`.
-3. **`<refutations>`** *(optional)*: `' | '`-separated forced-threat sequences. Each sequence is a string of `X` moves in which every move plays on a line with 3 `X` stones and 0 `O` stones, forcing `O` to block the single remaining empty cell on that line. After `X` plays `<move>` and `O` plays any legal reply $r$:
-   - If `O` has an immediate 3-in-a-row threat after `<move>`, `O` is forced to complete it (or block `X`'s immediate threat if `X` also threatened 4-in-a-row).
-   - Otherwise, for each non-forced reply $r$ by `O`, either the resulting position canonicalizes directly to another row in the certificate, or at least one sequence in `<refutations>` is disjoint from $r$ and leads to an immediate 4-in-a-row / double-threat win for `X` or to another row in the certificate.
+1. **`<board_state>`**: Occupied cells listed by interleaving `X`'s stones and `O`'s stones, each sorted in ascending cell-index order (`X0 O0 X1 O1 ...`), canonicalized under the 192 symmetries of the $4 \times 4 \times 4$ cube. Because all rows represent positions on `X`'s turn after an equal number of `X` and `O` moves, `<board_state>` always has even length $2k$, where the even indices ($0, 2, \dots$) are `X`'s stones and the odd indices ($1, 3, \dots$) are `O`'s stones.
+2. **`<move>`**: Single character indicating `X`'s chosen strategic move from `<board_state>`. It must play on an empty cell and leave `O` with no immediate winning reply (no line with 3 `O` stones and 1 empty cell).
+3. **`<refutations>`** *(optional)*: `' | '`-separated forced-threat sequences. After `X` plays `<move>`:
+   - If `<move>` completes 4-in-a-row or creates two or more immediate 3-in-a-row threats for `X`, `X` wins immediately.
+   - If `<move>` creates a single 3-in-a-row threat for `X`, `O` is forced to block the single empty cell on that line; otherwise, `O` may play any empty cell $r$.
+   - For each resulting reply $r$ by `O`, either the resulting `X`-turn position canonicalizes directly to another row in the certificate (with no cycles), or at least one sequence $m_1 m_2 \dots m_L$ in `<refutations>` applies from that position: at each step $i$, `X` plays $m_i$ on an empty cell (blocking any immediate threat `O` may have) to either win immediately on step $L$ (4-in-a-row or double threat) or create a single 3-in-a-row threat that forces `O`'s block without giving `O` 4-in-a-row, with step $L$'s forced block landing on another row in the certificate.

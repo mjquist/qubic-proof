@@ -25,6 +25,16 @@ from typing import Dict, List, Optional, Set, Tuple
 
 MASK64 = (1 << 64) - 1
 
+if hasattr(int, "bit_count"):
+
+  def _popcount(x: int) -> int:
+    return x.bit_count()
+
+else:
+
+  def _popcount(x: int) -> int:
+    return bin(x).count("1")
+
 
 def _in_bounds(x: int, y: int, z: int) -> bool:
   return 0 <= x < 4 and 0 <= y < 4 and 0 <= z < 4
@@ -256,7 +266,7 @@ def canonicalize(p1: int, p2: int) -> Tuple[int, int]:
 
 def has_won(p: int) -> bool:
   """Returns True if bitboard `p` contains any 4-in-a-row line."""
-  if p.bit_count() < 4:
+  if _popcount(p) < 4:
     return False
   for mask in WIN_LINES:
     if (p & mask) == mask:
@@ -266,7 +276,7 @@ def has_won(p: int) -> bool:
 
 def winning_moves(p: int, occ: int) -> int:
   """Returns bitmask of empty cells that immediately complete 4-in-a-row for `p`."""
-  if p.bit_count() < 3:
+  if _popcount(p) < 3:
     return 0
   empty = (~occ) & MASK64
   wins = 0
@@ -373,7 +383,7 @@ def advance_forced_threat_sequence(
     p = p_next
     occ = occ_next
     p_wins = winning_moves(p, occ)
-    p_win_cnt = p_wins.bit_count()
+    p_win_cnt = _popcount(p_wins)
     if step + 1 == len(seq):
       if p_win_cnt >= 2:
         return True, True, p, o
@@ -431,7 +441,7 @@ def load_tsv_certificate(path: str) -> Dict[Tuple[int, int], CertificateNode]:
             f" {len(parts)}."
         )
       p, o = parse_board(board_str)
-      if p.bit_count() != o.bit_count() or p == 0:
+      if _popcount(p) != _popcount(o) or p == 0:
         raise ValueError(
             f"Line {line_num}: expected non-empty Prover-turn board with"
             f" |X| == |O|, got {board_str!r}."
@@ -470,7 +480,7 @@ def _parse_opening_arg(opening_move: str) -> int:
 def infer_opening_root_p(cert: Dict[Tuple[int, int], CertificateNode]) -> int:
   """Infers the canonical Move-1 bitboard mask (1='0', 2='1', 3=both '0'&'1')."""
   two_stone_ps = {
-      p for (p, o) in cert if (p | o).bit_count() == 2 and p.bit_count() == 1
+      p for (p, o) in cert if _popcount(p | o) == 2 and _popcount(p) == 1
   }
   if not two_stone_ps:
     raise ValueError(
@@ -485,6 +495,7 @@ def infer_opening_root_p(cert: Dict[Tuple[int, int], CertificateNode]) -> int:
 def verify_certificate(
     cert: Dict[Tuple[int, int], CertificateNode],
     opening_move: Optional[str] = None,
+    progress_interval_sec: float = 0.0,
 ) -> VerificationResult:
   """Verifies a Qubic TSV proof certificate dictionary."""
   if not cert:
@@ -502,6 +513,25 @@ def verify_certificate(
   verified: Set[Tuple[int, int]] = set()
   visiting: Set[Tuple[int, int]] = set()
   branches_checked = 0
+  start_time = time.monotonic()
+  next_progress_time = (
+      start_time + progress_interval_sec
+      if progress_interval_sec > 0.0
+      else float("inf")
+  )
+
+  def maybe_report_progress() -> None:
+    nonlocal next_progress_time
+    now = time.monotonic()
+    if now >= next_progress_time:
+      elapsed = now - start_time
+      sys.stderr.write(
+          f"  [{elapsed:6.1f}s]"
+          f" verified_prover_states={len(verified)}/{len(cert)}"
+          f" disprover_branches={branches_checked}\n"
+      )
+      sys.stderr.flush()
+      next_progress_time = now + progress_interval_sec
 
   # Iterative DFS stack to avoid Python recursion limits on deep lines.
   # Stack entries: (cp, co, child_iter_list, next_child_idx)
@@ -548,7 +578,7 @@ def verify_certificate(
       )
 
     p_wins = winning_moves(cp_next, occ_next)
-    p_win_cnt = p_wins.bit_count()
+    p_win_cnt = _popcount(p_wins)
     if p_win_cnt >= 2:
       return True, "", [], 0
 
@@ -689,10 +719,12 @@ def verify_certificate(
       )
     if not ch_list:
       verified.add(root_ck)
+      maybe_report_progress()
       continue
 
     visiting.add(root_ck)
-    stack: List[ List[object] ] = [[root_ck, ch_list, 0]]
+    maybe_report_progress()
+    stack: List[List[object]] = [[root_ck, ch_list, 0]]
     while stack:
       top = stack[-1]
       cur_key: Tuple[int, int] = top[0]  # type: ignore[assignment]
@@ -703,6 +735,7 @@ def verify_certificate(
         visiting.remove(cur_key)
         verified.add(cur_key)
         stack.pop()
+        maybe_report_progress()
         continue
 
       nxt_key = cur_children[idx]
@@ -712,7 +745,9 @@ def verify_certificate(
       if nxt_key in visiting:
         return VerificationResult(
             ok=False,
-            error_msg=f"Cycle detected at {format_board(nxt_key[0], nxt_key[1])}",
+            error_msg=(
+                f"Cycle detected at {format_board(nxt_key[0], nxt_key[1])}"
+            ),
             certificate_rows=len(cert),
             verified_prover_states=len(verified),
             disprover_branches_checked=branches_checked,
@@ -735,6 +770,7 @@ def verify_certificate(
       else:
         visiting.add(nxt_key)
         stack.append([nxt_key, nxt_children, 0])
+      maybe_report_progress()
 
   return VerificationResult(
       ok=True,
@@ -760,7 +796,8 @@ def main(argv: List[str]) -> int:
 
   if not paths:
     sys.stderr.write(
-        "Usage: qubic_verifier.py [--opening x,y,z] <cert1.tsv> [cert2.tsv ...]\n"
+        "Usage: qubic_verifier.py [--opening x,y,z] <cert1.tsv>"
+        " [cert2.tsv ...]\n"
     )
     return 2
 
@@ -772,9 +809,16 @@ def main(argv: List[str]) -> int:
       sys.stderr.write(f"[FAIL] {path}: failed to load TSV ({e})\n")
       return 1
     t1 = time.monotonic()
-    res = verify_certificate(cert, opening_move=opening_move)
-    t2 = time.monotonic()
     load_ms = (t1 - t0) * 1000.0
+    sys.stderr.write(
+        f"Loaded {len(cert)} rows from {path} in {load_ms:.1f}ms;"
+        " verifying...\n"
+    )
+    sys.stderr.flush()
+    res = verify_certificate(
+        cert, opening_move=opening_move, progress_interval_sec=10.0
+    )
+    t2 = time.monotonic()
     verify_ms = (t2 - t1) * 1000.0
     if not res.ok:
       sys.stderr.write(
